@@ -1,105 +1,165 @@
 /**
- * Audio synthesis for playing violin notes
- * Uses Web Audio API to generate realistic violin-like sounds
+ * Enhanced audio synthesis for realistic violin sounds
  */
 
 export class ViolinSynth {
   private audioContext: AudioContext | null = null;
   private masterGain: GainNode | null = null;
+  private activeNotes: Map<string, {
+    oscillators: OscillatorNode[];
+    gains: GainNode[];
+    envelope: GainNode;
+  }> = new Map();
 
   constructor() {
     if (typeof window !== 'undefined') {
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       this.masterGain = this.audioContext.createGain();
       this.masterGain.connect(this.audioContext.destination);
-      this.masterGain.gain.value = 0.3; // Master volume
+      this.masterGain.gain.value = 0.4;
     }
   }
 
   /**
-   * Play a note given MIDI number
+   * Play a note with proper duration (for held notes)
    */
   playNote(midiNote: number, duration: number = 0.5): void {
     if (!this.audioContext || !this.masterGain) return;
 
     const ctx = this.audioContext;
     const now = ctx.currentTime;
-    
-    // Convert MIDI to frequency
     const frequency = 440 * Math.pow(2, (midiNote - 69) / 12);
+    const noteKey = `${midiNote}-${now}`;
 
-    // Create oscillators for a richer violin-like sound
+    // Create multiple oscillators for rich violin timbre
     const fundamental = ctx.createOscillator();
-    const harmonic1 = ctx.createOscillator();
     const harmonic2 = ctx.createOscillator();
+    const harmonic3 = ctx.createOscillator();
+    const harmonic4 = ctx.createOscillator();
+    const subHarmonic = ctx.createOscillator();
 
-    // Fundamental frequency (sawtooth for violin-like timbre)
+    // Violin uses sawtooth with specific harmonics
     fundamental.type = 'sawtooth';
     fundamental.frequency.value = frequency;
-
-    // Harmonics for richness
-    harmonic1.type = 'sine';
-    harmonic1.frequency.value = frequency * 2;
     
     harmonic2.type = 'sine';
-    harmonic2.frequency.value = frequency * 3;
+    harmonic2.frequency.value = frequency * 2;
+    
+    harmonic3.type = 'sine';
+    harmonic3.frequency.value = frequency * 3;
+    
+    harmonic4.type = 'sine';
+    harmonic4.frequency.value = frequency * 4;
+    
+    subHarmonic.type = 'triangle';
+    subHarmonic.frequency.value = frequency * 0.5;
 
-    // Create gain nodes for each oscillator
+    // Create gain nodes for mixing
     const fundGain = ctx.createGain();
-    const harm1Gain = ctx.createGain();
     const harm2Gain = ctx.createGain();
+    const harm3Gain = ctx.createGain();
+    const harm4Gain = ctx.createGain();
+    const subGain = ctx.createGain();
 
-    // Mix levels
     fundGain.gain.value = 0.6;
-    harm1Gain.gain.value = 0.2;
-    harm2Gain.gain.value = 0.1;
+    harm2Gain.gain.value = 0.3;
+    harm3Gain.gain.value = 0.15;
+    harm4Gain.gain.value = 0.08;
+    subGain.gain.value = 0.1;
 
-    // Create envelope for natural attack/decay
+    // ADSR Envelope for realistic violin attack/sustain/release
     const envelope = ctx.createGain();
     envelope.gain.setValueAtTime(0, now);
-    envelope.gain.linearRampToValueAtTime(0.8, now + 0.05); // Attack
-    envelope.gain.linearRampToValueAtTime(0.6, now + 0.1); // Sustain
-    envelope.gain.exponentialRampToValueAtTime(0.01, now + duration); // Release
+    
+    // Attack (bow touching string)
+    envelope.gain.linearRampToValueAtTime(0.3, now + 0.02);
+    envelope.gain.linearRampToValueAtTime(0.8, now + 0.08);
+    
+    // Sustain
+    envelope.gain.setValueAtTime(0.8, now + 0.08);
+    envelope.gain.linearRampToValueAtTime(0.7, now + duration - 0.1);
+    
+    // Release (bow lifting)
+    envelope.gain.exponentialRampToValueAtTime(0.01, now + duration);
 
-    // Add vibrato for realism
+    // Add vibrato (violin characteristic)
     const vibrato = ctx.createOscillator();
     const vibratoGain = ctx.createGain();
-    vibrato.frequency.value = 5; // 5 Hz vibrato
-    vibratoGain.gain.value = 3; // Subtle pitch modulation
+    vibrato.frequency.value = 5.5; // 5.5 Hz vibrato
+    vibratoGain.gain.value = 8; // Depth of vibrato
     
     vibrato.connect(vibratoGain);
     vibratoGain.connect(fundamental.frequency);
-    vibratoGain.connect(harmonic1.frequency);
     vibratoGain.connect(harmonic2.frequency);
+    vibratoGain.connect(harmonic3.frequency);
 
-    // Add a lowpass filter for warmth
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 2000 + frequency; // Brightness varies with pitch
-    filter.Q.value = 1;
+    // Add slight tremolo (amplitude modulation)
+    const tremolo = ctx.createOscillator();
+    const tremoloGain = ctx.createGain();
+    tremolo.frequency.value = 6;
+    tremoloGain.gain.value = 0.02;
+    
+    tremolo.connect(tremoloGain);
+    tremoloGain.connect(envelope.gain);
 
-    // Connect the audio graph
+    // Realistic violin formant filter
+    const filter1 = ctx.createBiquadFilter();
+    filter1.type = 'bandpass';
+    filter1.frequency.value = 400 + frequency * 0.5;
+    filter1.Q.value = 3;
+
+    const filter2 = ctx.createBiquadFilter();
+    filter2.type = 'lowpass';
+    filter2.frequency.value = 3000 + frequency;
+    filter2.Q.value = 0.7;
+
+    // Connect audio graph
     fundamental.connect(fundGain);
-    harmonic1.connect(harm1Gain);
     harmonic2.connect(harm2Gain);
+    harmonic3.connect(harm3Gain);
+    harmonic4.connect(harm4Gain);
+    subHarmonic.connect(subGain);
 
     fundGain.connect(envelope);
-    harm1Gain.connect(envelope);
     harm2Gain.connect(envelope);
+    harm3Gain.connect(envelope);
+    harm4Gain.connect(envelope);
+    subGain.connect(envelope);
 
-    envelope.connect(filter);
-    filter.connect(this.masterGain);
+    envelope.connect(filter1);
+    filter1.connect(filter2);
+    filter2.connect(this.masterGain);
 
-    // Start and stop
+    // Start everything
     fundamental.start(now);
-    harmonic1.start(now);
     harmonic2.start(now);
+    harmonic3.start(now);
+    harmonic4.start(now);
+    subHarmonic.start(now);
     vibrato.start(now);
+    tremolo.start(now);
 
-    fundamental.stop(now + duration);
-    harmonic1.stop(now + duration);
-    harmonic2.stop(now + duration);
-    vibrato.stop(now + duration);
+    // Stop everything at the end
+    const stopTime = now + duration;
+    fundamental.stop(stopTime);
+    harmonic2.stop(stopTime);
+    harmonic3.stop(stopTime);
+    harmonic4.stop(stopTime);
+    subHarmonic.stop(stopTime);
+    vibrato.stop(stopTime);
+    tremolo.stop(stopTime);
+
+    // Store for potential early stopping
+    this.activeNotes.set(noteKey, {
+      oscillators: [fundamental, harmonic2, harmonic3, harmonic4, subHarmonic, vibrato, tremolo],
+      gains: [fundGain, harm2Gain, harm3Gain, harm4Gain, subGain, vibratoGain, tremoloGain],
+      envelope,
+    });
+
+    // Clean up after note ends
+    setTimeout(() => {
+      this.activeNotes.delete(noteKey);
+    }, duration * 1000 + 100);
   }
 
   /**
@@ -119,16 +179,32 @@ export class ViolinSynth {
   }
 
   /**
+   * Stop all playing notes
+   */
+  stopAll(): void {
+    this.activeNotes.forEach(note => {
+      note.oscillators.forEach(osc => {
+        try {
+          osc.stop();
+        } catch (e) {
+          // Already stopped
+        }
+      });
+    });
+    this.activeNotes.clear();
+  }
+
+  /**
    * Set master volume (0-1)
    */
   setVolume(volume: number): void {
     if (this.masterGain) {
-      this.masterGain.gain.value = Math.max(0, Math.min(1, volume));
+      this.masterGain.gain.value = Math.max(0, Math.min(1, volume)) * 0.4;
     }
   }
 
   /**
-   * Resume audio context (needed for browser autoplay policies)
+   * Resume audio context
    */
   async resume(): Promise<void> {
     if (this.audioContext && this.audioContext.state === 'suspended') {
@@ -137,7 +213,6 @@ export class ViolinSynth {
   }
 }
 
-// Singleton instance
 let synthInstance: ViolinSynth | null = null;
 
 export function getViolinSynth(): ViolinSynth {

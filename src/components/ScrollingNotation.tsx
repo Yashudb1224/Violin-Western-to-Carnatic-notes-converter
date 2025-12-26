@@ -4,12 +4,11 @@ import { useState, useRef, useEffect } from 'react';
 import { Play, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import { getViolinSynth } from '@/lib/audio-synth';
 
-// CORRECT MAPPING: D string = Middle Sa (tonic)
 const STRING_COLORS = {
-  G: '#8b5cf6', // Purple - Low Ma1 (4th string)
-  D: '#ef4444', // Red - Middle Sa (3rd string - TONIC)
-  A: '#3b82f6', // Blue - Middle Pa (2nd string)
-  E: '#f59e0b', // Amber - High Ri2. (1st string)
+  G: '#8b5cf6',
+  D: '#ef4444',
+  A: '#3b82f6',
+  E: '#f59e0b',
 };
 
 const NOTES = {
@@ -17,53 +16,15 @@ const NOTES = {
   'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11, 'B#': 0, 'Cb': 11,
 };
 
-// String tunings in MIDI (D = Middle Sa at D3)
 const STRING_MIDI = {
-  E: 64, // E4 = High Ri2.
-  A: 57, // A3 = Middle Pa
-  D: 50, // D3 = Middle Sa (TONIC)
-  G: 43, // G2 = Low Ma1
-};
-
-// Correct positions with low/high finger variants
-const POSITIONS = {
-  G: [
-    { s: 0, n: 'Low Ma1', f: 0 },
-    { s: 1, n: 'Low Dha1', f: 1 },
-    { s: 2, n: 'Low Dha2', f: 1 },
-    { s: 3, n: 'Low Ni2', f: 2 },
-    { s: 4, n: 'Low Ni3', f: 2 },
-    { s: 5, n: 'Low Sa', f: 3 },
-  ],
-  D: [
-    { s: 0, n: 'Sa', f: 0 },
-    { s: 1, n: 'Ri1', f: 1 },
-    { s: 2, n: 'Ri2', f: 1 },
-    { s: 3, n: 'Ga2', f: 2 },
-    { s: 4, n: 'Ga3', f: 2 },
-    { s: 5, n: 'Ma1', f: 3 },
-    { s: 6, n: 'Ma2', f: 4 },
-  ],
-  A: [
-    { s: 0, n: 'Pa', f: 0 },
-    { s: 1, n: 'Dha1', f: 1 },
-    { s: 2, n: 'Dha2', f: 1 },
-    { s: 3, n: 'Ni2', f: 2 },
-    { s: 4, n: 'Ni3', f: 2 },
-    { s: 5, n: 'High Sa.', f: 3 },
-  ],
-  E: [
-    { s: 0, n: 'High Ri2.', f: 0 },
-    { s: 1, n: 'High Ga2.', f: 1 },
-    { s: 2, n: 'High Ga3.', f: 1 },
-    { s: 3, n: 'High Ma1.', f: 2 },
-    { s: 4, n: 'High Ma2.', f: 2 },
-    { s: 5, n: 'High Pa.', f: 3 },
-  ],
+  E: 64,
+  A: 57,
+  D: 50,
+  G: 43,
 };
 
 export const ScrollingNotation = ({ uploadedNotes }: { uploadedNotes?: string }) => {
-  const [input, setInput] = useState('D E F# G A B C# D');
+  const [input, setInput] = useState('G3 A3 B3 C4 D4 E4 F#4 G4');
   const [notes, setNotes] = useState<any[]>([]);
   const [playing, setPlaying] = useState(false);
   const [tempo, setTempo] = useState(120);
@@ -76,76 +37,49 @@ export const ScrollingNotation = ({ uploadedNotes }: { uploadedNotes?: string })
   const lastPlayedIdx = useRef(-1);
   const synth = useRef(getViolinSynth());
 
-  // Load uploaded notes when they change
   useEffect(() => {
     if (uploadedNotes) {
       setInput(uploadedNotes);
-      // Auto-parse uploaded notes
-      const parts = uploadedNotes.trim().split(/\s+/);
-      const parsed = [];
-      
-      for (const part of parts) {
-        const match = part.match(/^([A-G][#b]?)(\d*)$/i);
-        if (match) {
-          const note = match[1].toUpperCase();
-          const octave = match[2] ? parseInt(match[2]) : 3;
-          const midi = (octave + 1) * 12 + NOTES[note];
-          
-          let position = null;
-          for (const [str, base] of Object.entries(STRING_MIDI)) {
-            const offset = midi - base;
-            const pos = POSITIONS[str as keyof typeof POSITIONS].find(p => p.s === offset);
-            if (pos) {
-              position = {
-                string: str,
-                notation: pos.n,
-                finger: pos.f,
-              };
-              break;
-            }
-          }
-          
-          if (position) {
-            parsed.push({ note, octave, midi, ...position });
-          }
-        }
-      }
-      
-      setNotes(parsed);
-      setCurrentIdx(0);
-      scrollY.current = 0;
-      lastPlayedIdx.current = -1;
+      parseNotesFromInput(uploadedNotes);
     }
   }, [uploadedNotes]);
 
-  const parseNotes = () => {
-    const parts = input.trim().split(/\s+/);
+  const parseNotesFromInput = (inputText: string) => {
+    const parts = inputText.trim().split(/\s+/);
     const parsed = [];
     
     for (const part of parts) {
-      const match = part.match(/^([A-G][#b]?)(\d*)$/i);
+      const match = part.match(/^([A-G][#b]?)(\d*):?(\d*\.?\d*)$/i);
       if (match) {
         const note = match[1].toUpperCase();
-        const octave = match[2] ? parseInt(match[2]) : 3; // Default to octave 3
+        const octave = match[2] ? parseInt(match[2]) : 4;
+        const duration = match[3] ? parseFloat(match[3]) : 1;
         const midi = (octave + 1) * 12 + NOTES[note];
         
-        // Find position on correct string
-        let position = null;
-        for (const [str, base] of Object.entries(STRING_MIDI)) {
-          const offset = midi - base;
-          const pos = POSITIONS[str as keyof typeof POSITIONS].find(p => p.s === offset);
-          if (pos) {
-            position = {
-              string: str,
-              notation: pos.n,
-              finger: pos.f,
-            };
-            break;
+        let bestString = null;
+        let bestFinger = -1;
+        let minDistance = 999;
+        
+        for (const [str, openMidi] of Object.entries(STRING_MIDI)) {
+          const distance = midi - openMidi;
+          if (distance >= 0 && distance <= 12) {
+            if (distance < minDistance) {
+              minDistance = distance;
+              bestString = str;
+              bestFinger = distance;
+            }
           }
         }
         
-        if (position) {
-          parsed.push({ note, octave, midi, ...position });
+        if (bestString) {
+          parsed.push({
+            note,
+            octave,
+            midi,
+            duration,
+            string: bestString,
+            finger: bestFinger,
+          });
         }
       }
     }
@@ -156,8 +90,11 @@ export const ScrollingNotation = ({ uploadedNotes }: { uploadedNotes?: string })
     lastPlayedIdx.current = -1;
   };
 
+  const parseNotes = () => {
+    parseNotesFromInput(input);
+  };
+
   useEffect(() => {
-    // Set initial volume
     synth.current.setVolume(volume);
   }, [volume]);
 
@@ -176,47 +113,44 @@ export const ScrollingNotation = ({ uploadedNotes }: { uploadedNotes?: string })
     const w = rect.width;
     const h = rect.height;
     const laneW = w / 4;
-    const targetY = h - 100;
+    const targetY = h - 120;
     const spacing = 200;
     
     const draw = () => {
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, w, h);
       
-      // Draw 4 string lanes (G D A E from left to right)
       ['G', 'D', 'A', 'E'].forEach((str, i) => {
         const x = i * laneW;
         
-        // Lane divider
         ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(x + laneW, 0);
         ctx.lineTo(x + laneW, h);
         ctx.stroke();
         
-        // String label with description
         ctx.fillStyle = STRING_COLORS[str as keyof typeof STRING_COLORS];
-        ctx.font = 'bold 28px sans-serif';
+        ctx.font = 'bold 48px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(str, x + laneW/2, 40);
+        ctx.fillText(str, x + laneW/2, 60);
         
-        // String description
-        ctx.font = '12px sans-serif';
+        ctx.font = '14px sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,0.5)';
-        const desc = str === 'G' ? 'Low Ma1' : str === 'D' ? 'Sa' : str === 'A' ? 'Pa' : 'High Ri2.';
-        ctx.fillText(desc, x + laneW/2, 60);
+        ctx.fillText('STRING', x + laneW/2, 90);
         
-        // Target line
         ctx.strokeStyle = STRING_COLORS[str as keyof typeof STRING_COLORS];
-        ctx.lineWidth = 4;
+        ctx.lineWidth = 6;
         ctx.beginPath();
-        ctx.moveTo(x + 20, targetY);
-        ctx.lineTo(x + laneW - 20, targetY);
+        ctx.moveTo(x + 30, targetY);
+        ctx.lineTo(x + laneW - 30, targetY);
         ctx.stroke();
+        
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillText('▼ PLAY', x + laneW/2, targetY + 25);
       });
       
-      // Draw notes
       if (playing) {
         scrollY.current += tempo / 30;
       }
@@ -228,43 +162,50 @@ export const ScrollingNotation = ({ uploadedNotes }: { uploadedNotes?: string })
         const x = laneIdx * laneW + laneW / 2;
         const y = targetY - (idx * spacing) + scrollY.current;
         
-        if (y < -50 || y > h + 50) return;
+        const noteHeight = Math.min(spacing * (n.duration || 1) * 0.8, spacing * 3);
         
-        const isActive = Math.abs(y - targetY) < 30;
+        if (y < -noteHeight - 50 || y > h + 50) return;
         
-        // Play sound when note hits target line
+        const isActive = Math.abs(y - targetY) < 40;
+        
         if (isActive && idx !== lastPlayedIdx.current && soundEnabled && playing) {
           lastPlayedIdx.current = idx;
-          synth.current.resume(); // Resume audio context if suspended
-          synth.current.playWesternNote(n.note, n.octave, 0.5);
+          synth.current.resume();
+          const noteDuration = (n.duration || 1) * (60 / tempo);
+          synth.current.playWesternNote(n.note, n.octave, noteDuration);
         }
         
         if (isActive && idx !== currentIdx) {
           setCurrentIdx(idx);
         }
         
-        // Note circle
+        const radius = isActive ? 60 : 45;
+        
+        if (noteHeight > radius * 2) {
+          ctx.fillStyle = y > targetY + 50 ? '#555' : STRING_COLORS[n.string as keyof typeof STRING_COLORS] + '80';
+          ctx.fillRect(x - 12, y - noteHeight + radius, 24, noteHeight - radius * 2);
+        }
+        
         ctx.beginPath();
-        ctx.arc(x, y, isActive ? 40 : 30, 0, Math.PI * 2);
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.fillStyle = y > targetY + 50 ? '#555' : STRING_COLORS[n.string as keyof typeof STRING_COLORS];
+        
         if (isActive) {
           ctx.shadowColor = STRING_COLORS[n.string as keyof typeof STRING_COLORS];
-          ctx.shadowBlur = 20;
+          ctx.shadowBlur = 30;
         }
         ctx.fill();
         ctx.shadowBlur = 0;
         
-        // Notation text
-        ctx.fillStyle = isActive ? '#fff' : '#000';
-        ctx.font = `bold ${isActive ? 14 : 11}px sans-serif`;
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${isActive ? 48 : 36}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(n.notation, x, y);
+        ctx.fillText(n.finger.toString(), x, y);
         
-        // Western note below
-        ctx.fillStyle = '#fff';
-        ctx.font = '11px sans-serif';
-        ctx.fillText(`${n.note}${n.octave}`, x, y + (isActive ? 55 : 45));
+        ctx.fillStyle = isActive ? '#fff' : '#ddd';
+        ctx.font = `${isActive ? 'bold 16px' : '14px'} sans-serif`;
+        ctx.fillText(`${n.note}${n.octave}`, x, y + radius + 20);
       });
       
       animationRef.current = requestAnimationFrame(draw);
@@ -279,18 +220,21 @@ export const ScrollingNotation = ({ uploadedNotes }: { uploadedNotes?: string })
 
   return (
     <div className="space-y-4">
-      {/* Info box */}
-      <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm">
-        <strong className="text-blue-400">System:</strong> D string = Middle Sa (tonic). 
-        G=Low Ma1, D=Sa, A=Pa, E=High Ri2.
+      <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+        <h3 className="font-bold text-blue-400 mb-2">How to Play:</h3>
+        <ul className="text-sm text-slate-300 space-y-1">
+          <li>• Each column = a violin string (G, D, A, E)</li>
+          <li>• Numbers = finger positions (0=open, 1=index, 2=middle, 3=ring, 4=pinky)</li>
+          <li>• When number hits the line → play that finger on that string!</li>
+        </ul>
       </div>
 
-      {/* Input */}
       <div className="bg-slate-800 rounded-xl p-4">
+        <label className="text-sm text-slate-400 mb-2 block">Enter Western Notes:</label>
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Enter notes: D E F# G A B C# D  (or with octave: D3 E3 F#3)"
+          placeholder="G3 A3 B3 C4 D4 (or with duration: G3:2 A3:1 B3:0.5)"
           className="w-full bg-slate-900 text-white p-3 rounded-lg border border-slate-700 font-mono"
           rows={2}
         />
@@ -302,56 +246,58 @@ export const ScrollingNotation = ({ uploadedNotes }: { uploadedNotes?: string })
         </button>
       </div>
 
-      {/* Controls */}
       {notes.length > 0 && (
         <div className="bg-slate-800 rounded-xl p-4 space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex gap-3">
               <button
                 onClick={async () => {
-                  if (!playing) {
-                    await synth.current.resume();
-                  }
+                  if (!playing) await synth.current.resume();
                   setPlaying(!playing);
                 }}
-                className={`px-6 py-2 rounded-lg font-semibold flex items-center gap-2 ${
+                className={`px-8 py-3 rounded-lg font-bold text-lg flex items-center gap-2 ${
                   playing ? 'bg-orange-600 hover:bg-orange-700' : 'bg-green-600 hover:bg-green-700'
                 }`}
               >
-                {playing ? <><Pause size={16}/>Pause</> : <><Play size={16}/>Play</>}
+                {playing ? <><Pause size={24}/>PAUSE</> : <><Play size={24}/>PLAY</>}
               </button>
               <button
-                onClick={() => { setPlaying(false); scrollY.current = 0; setCurrentIdx(0); lastPlayedIdx.current = -1; }}
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg"
+                onClick={() => { 
+                  setPlaying(false); 
+                  scrollY.current = 0; 
+                  setCurrentIdx(0); 
+                  lastPlayedIdx.current = -1; 
+                }}
+                className="px-6 py-3 bg-slate-700 hover:bg-slate-600 rounded-lg font-bold"
               >
-                <RotateCcw size={16} />
+                <RotateCcw size={24} />
               </button>
             </div>
             
             <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-400">Tempo: {tempo}</span>
+              <span className="text-sm text-slate-400">Speed:</span>
               <input
                 type="range"
-                min="60"
-                max="180"
+                min="40"
+                max="200"
                 value={tempo}
                 onChange={(e) => setTempo(parseInt(e.target.value))}
-                className="w-32"
+                className="w-40"
               />
+              <span className="text-lg font-bold w-12">{tempo}</span>
             </div>
           </div>
 
-          {/* Audio controls */}
           <div className="flex items-center justify-between pt-4 border-t border-slate-700">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setSoundEnabled(!soundEnabled)}
-                className={`p-2 rounded-lg ${soundEnabled ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-700 hover:bg-slate-600'}`}
+                className={`p-3 rounded-lg ${soundEnabled ? 'bg-blue-600' : 'bg-slate-700'}`}
               >
-                {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
+                {soundEnabled ? <Volume2 size={24} /> : <VolumeX size={24} />}
               </button>
               <span className="text-sm text-slate-400">
-                {soundEnabled ? 'Sound On' : 'Sound Off'}
+                {soundEnabled ? 'Sound ON' : 'Sound OFF'}
               </span>
             </div>
             
@@ -373,22 +319,24 @@ export const ScrollingNotation = ({ uploadedNotes }: { uploadedNotes?: string })
         </div>
       )}
 
-      {/* Canvas */}
-      <div className="bg-slate-800 rounded-xl overflow-hidden border-2 border-slate-700">
-        <canvas ref={canvasRef} className="w-full" style={{ height: '600px' }} />
+      <div className="bg-slate-800 rounded-xl overflow-hidden border-4 border-slate-700">
+        <canvas ref={canvasRef} className="w-full" style={{ height: '700px' }} />
       </div>
 
-      {/* Current note display */}
       {notes[currentIdx] && (
-        <div className="bg-slate-800 rounded-xl p-6 text-center">
-          <div className="text-sm text-slate-400 mb-2">Current Note</div>
-          <div className="text-4xl font-bold mb-2" style={{ color: STRING_COLORS[notes[currentIdx].string as keyof typeof STRING_COLORS] }}>
-            {notes[currentIdx].notation}
+        <div className="bg-slate-800 rounded-xl p-8 text-center border-4" style={{ borderColor: STRING_COLORS[notes[currentIdx].string as keyof typeof STRING_COLORS] }}>
+          <div className="text-sm text-slate-400 mb-2">NOW PLAYING:</div>
+          <div className="text-8xl font-black mb-4" style={{ color: STRING_COLORS[notes[currentIdx].string as keyof typeof STRING_COLORS] }}>
+            {notes[currentIdx].finger}
           </div>
-          <div className="text-slate-300">
-            {notes[currentIdx].string} String • 
-            Finger {notes[currentIdx].finger === 0 ? 'Open' : notes[currentIdx].finger} • 
-            {notes[currentIdx].note}{notes[currentIdx].octave}
+          <div className="text-3xl font-bold mb-2" style={{ color: STRING_COLORS[notes[currentIdx].string as keyof typeof STRING_COLORS] }}>
+            {notes[currentIdx].string} STRING
+          </div>
+          <div className="text-xl text-slate-300">
+            {notes[currentIdx].finger === 0 ? 'OPEN STRING' : `FINGER ${notes[currentIdx].finger}`}
+          </div>
+          <div className="text-lg text-slate-400 mt-2">
+            ({notes[currentIdx].note}{notes[currentIdx].octave})
           </div>
         </div>
       )}
